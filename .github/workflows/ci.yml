@@ -1,0 +1,59 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m unittest discover -s test -v
+      - name: DNS malformed-packet and hash-table tests with sanitizers
+        run: |
+          g++ -std=c++14 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -g test/protocol_test.cpp -o /tmp/protocol_test
+          /tmp/protocol_test
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [s3, s3-4mb, s3-16mb, s3-uart, s3-4mb-uart, s3-16mb-uart]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install platformio==6.1.19
+      - name: Build firmware without shared credentials
+        run: pio run -e ${{ matrix.environment }}
+      - name: Build filesystem using deterministic test data
+        run: |
+          python tools/build_blocklist.py data/blocklist.bin test/fixtures/domains.txt
+          pio run -e ${{ matrix.environment }} -t buildfs
+          python tools/check_build.py ${{ matrix.environment }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: compile-check-${{ matrix.environment }}
+          path: |
+            .pio/build/${{ matrix.environment }}/firmware.bin
+            .pio/build/${{ matrix.environment }}/partitions.bin
+            .pio/build/${{ matrix.environment }}/bootloader.bin
+          if-no-files-found: error
+          retention-days: 14

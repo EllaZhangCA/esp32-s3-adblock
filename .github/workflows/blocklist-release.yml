@@ -1,0 +1,50 @@
+name: Blocklist
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: blocklist-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python tools/build_blocklist.py blocklist.bin
+      - name: Check size and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          size=$(stat -c%s blocklist.bin)
+          test "$((size % 5))" -eq 0
+          test "$size" -gt 250000
+          test "$size" -lt 655000
+          sha256sum blocklist.bin > blocklist.sha256
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from datetime import datetime, timezone
+          repo = os.environ['GH_REPO']
+          notes = f"Default blocklist built {datetime.now(timezone.utc).date()}.\n\nHTTPS update URL:\nhttps://github.com/{repo}/releases/download/blocklist/blocklist.bin\n\nSources: StevenBlack hosts + Hagezi Light; their licenses apply."
+          Path('release-notes.txt').write_text(notes, encoding='utf-8')
+          PY
+          if gh release view blocklist >/dev/null 2>&1; then
+            gh release edit blocklist --notes-file release-notes.txt
+          else
+            gh release create blocklist --title 'Weekly blocklist' --notes-file release-notes.txt --latest=false
+          fi
+          gh release upload blocklist blocklist.bin blocklist.sha256 --clobber

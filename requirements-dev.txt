@@ -1,0 +1,2 @@
+platformio==6.1.19
+cryptography==46.0.7

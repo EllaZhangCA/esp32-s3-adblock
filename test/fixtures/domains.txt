@@ -1,0 +1,4 @@
+# CI-only fixture; this is not a production ad-blocking list.
+ads.example.com
+tracker.example.org
+malware.example.net
