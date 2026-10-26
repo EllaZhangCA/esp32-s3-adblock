@@ -27,11 +27,10 @@ FNV_OFFSET = 0xcbf29ce484222325
 FNV_PRIME  = 0x100000001b3
 U64 = (1 << 64) - 1
 
-# Daily driver that FITS alongside dual-OTA firmware slots (~250k domain budget):
-# ads + trackers + malware, WhatsApp/social keep working. ~100k entries / 0.5 MB
+# Daily driver: ads + trackers + malware. Size varies as upstream lists grow;
+# the release workflow enforces the 4MB profile's safe update budget.
 # (Hagezi's wildcard lists drop subdomains the firmware's parent-matching already covers).
-# Want more? swap light-onlydomains.txt -> pro-onlydomains.txt is 370k and ONLY fits the
-# single-app (no-OTA) partition table.
+# Larger lists require filesystem space for both the old and new copies.
 DEFAULT_SOURCES = [
     'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts',            # base: ads + malware
     'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/light-onlydomains.txt',  # Hagezi Light (wildcard = domain + subdomains)
@@ -70,6 +69,19 @@ def read_source(src: str) -> str:
         raise ValueError('Source must be an existing local file or an HTTPS URL')
     print(f'  downloading {src} ...', file=sys.stderr)
     return urllib.request.urlopen(src, timeout=180).read().decode('utf-8', 'ignore')
+
+def remove_covered_subdomains(domains: set) -> set:
+    """Remove children covered by existing parents, matching firmware isBlocked.
+
+    Never invent a parent: www.example.com alone must not block example.com.
+    """
+    result = set()
+    for domain in domains:
+        labels = domain.split('.')
+        if not any('.'.join(labels[i:]) in domains for i in range(1, len(labels) - 1)):
+            result.add(domain)
+    return result
+
 
 def main():
     global ALLOW_MISSING
@@ -119,6 +131,9 @@ def main():
     if skipped:
         print(f'skipped rules    : {skipped:,} (adblock syntax that a DNS hash list cannot express)', file=sys.stderr)
 
+    source_count = len(domains)
+    domains = remove_covered_subdomains(domains)
+    print(f'covered subdomains: {source_count - len(domains):,} removed (parent already blocks them)', file=sys.stderr)
     hashes = sorted(fnv(d.encode()) for d in domains)
     collisions = len(hashes) - len(set(hashes))
     uniq = sorted(set(hashes))                       # one entry per distinct hash
@@ -137,7 +152,8 @@ def main():
             os.unlink(tmp)
 
     n, size = len(uniq), len(uniq) * HASH_BYTES
-    print(f'source domains   : {len(domains):,}')
+    print(f'source domains   : {source_count:,}')
+    print(f'blocking domains : {len(domains):,}')
     print(f'hash entries     : {n:,}  ({HASH_BYTES}-byte / {HASH_BYTES*8}-bit)')
     print(f'collisions       : {collisions}  (domains sharing a hash -> over-block)')
     print(f'flash blob       : {size:,} bytes  ({size/1024/1024:.2f} MB)  -> {out}')

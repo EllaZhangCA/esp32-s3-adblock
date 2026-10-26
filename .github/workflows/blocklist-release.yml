@@ -30,9 +30,11 @@ jobs:
         run: |
           set -euo pipefail
           size=$(stat -c%s blocklist.bin)
-          test "$((size % 5))" -eq 0
-          test "$size" -gt 250000
-          test "$size" -lt 655000
+          echo "Blocklist size: $size bytes; required: 250000 < size < 655000, divisible by 5."
+          if (( size % 5 != 0 || size <= 250000 || size >= 655000 )); then
+            echo "::error::Blocklist is malformed or outside the 4MB-safe release budget ($size bytes). Previous release retained."
+            exit 1
+          fi
           sha256sum blocklist.bin > blocklist.sha256
           python - <<'PY'
           import os

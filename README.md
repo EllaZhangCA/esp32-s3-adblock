@@ -58,7 +58,7 @@ nslookup github.com <S3的IP>
 
 - 网页上传 `blocklist.bin`：需要登录、POST 和防 CSRF 请求头。先写临时文件，检查长度、严格排序和写入完整性，成功后切换。失败保留旧列表，断电后可恢复备份。
 - 留出旧、新两份列表及文件系统余量。4MB 版本建议单份不超过约 **640KB**；8MB/16MB 可更大。实际空间不足会拒绝更新，不会删旧列表。
-- HTTPS 自动更新：仓库每周生成的地址为 `https://github.com/EllaZhangCA/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`。在网页配置后启用，默认关闭。验证 TLS 证书、主机名和时间，拒绝 HTTP 降级；NTP 未同步时保留旧列表。服务器须返回 Content-Length，暂不支持 chunked 下载。默认列表超过 655KB 时，发布任务会停止，避免挤满 4MB 设备。
+- HTTPS 自动更新：仓库每周生成的地址为 `https://github.com/EllaZhangCA/esp32-s3-adblock/releases/download/blocklist/blocklist.bin`。在网页配置后启用，默认关闭。验证 TLS 证书、主机名和时间，拒绝 HTTP 降级；NTP 未同步时保留旧列表。服务器须返回 Content-Length，暂不支持 chunked 下载。生成时会去除已被现有父域名覆盖的子域名规则，与固件的父域名匹配行为一致；不会凭空增加父域名。精简后的默认列表达到 655,000 字节时，发布任务会停止并保留上次发布，避免挤满 4MB 设备。
 - 固件 OTA：在网页上传同一板型/分区配置的 `.pio/build/<配置名>/firmware.bin`。切换 Flash 容量或分区必须重新通过 USB 刷固件和文件系统。镜像格式校验不等于签名认证；只使用可信来源的固件。
 - ArduinoOTA 网络服务默认关闭；需要时自行将 `ENABLE_ARDUINO_OTA=1`。网页固件 OTA 不受该开关影响。
 

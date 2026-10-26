@@ -34,6 +34,33 @@ class BlocklistTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(blob, bl.fnv(b'www.example.com').to_bytes(5,'little'))
 
+    def test_covered_children_removed_without_broadening(self):
+        domains = {'example.com', 'ads.example.com', 'deep.ads.example.com',
+                   'www.other.com', 'child.www.other.com', 'notexample.com',
+                   'ads.example.net', 'example.net.au'}
+        compact = bl.remove_covered_subdomains(domains)
+        self.assertEqual(compact, {'example.com', 'www.other.com', 'notexample.com',
+                                   'ads.example.net', 'example.net.au'})
+        # Compare domain decisions, including unlisted parents and siblings.
+        def blocked(query, rules):
+            labels = query.split('.')
+            return any('.'.join(labels[i:]) in rules for i in range(len(labels) - 1))
+        queries = domains | {'other.com', 'shop.other.com', 'example.net', 'com',
+                             'safe.test', 'another.example.com'}
+        queries |= {'new.' + d for d in domains}
+        for query in queries:
+            self.assertEqual(blocked(query, domains), blocked(query, compact), query)
+
+    def test_compaction_after_allow_rules_and_across_sources(self):
+        with tempfile.TemporaryDirectory() as d:
+            second = Path(d) / 'second.txt'
+            second.write_text('example.com\nallowed.test\n', encoding='utf-8')
+            code, blob = self.run_builder('ads.example.com\nchild.allowed.test\n'
+                                         '@@||allowed.test^\n', str(second))
+        expected = sorted(bl.fnv(d.encode()) for d in ['example.com', 'child.allowed.test'])
+        self.assertEqual(code, 0)
+        self.assertEqual(blob, b''.join(h.to_bytes(5, 'little') for h in expected))
+
     def test_invalid_input_preserves_previous_file(self):
         code, blob = self.run_builder('0.0.0.0 localhost\n<script>.com\na..com\n*.example.com\n127.0.0.1\n')
         self.assertNotEqual(code, 0); self.assertEqual(blob, b'original')
